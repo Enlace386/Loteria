@@ -30,7 +30,7 @@ input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-
 #prev img{max-width:100%;max-height:200px;border-radius:10px}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--bd);text-align:right}td:first-child,th:first-child{text-align:left}
 .kpi{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}.kpi div{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px}.kpi b{display:block;font-size:20px}
-#cropper{position:fixed;inset:0;background:var(--bg);z-index:20;display:none;overflow:auto;padding:14px;padding-top:calc(14px + env(safe-area-inset-top,0px));padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}#cropper.on{display:block}#cropCanvas{display:block;width:100%;max-height:58vh;object-fit:contain;touch-action:none;border:1px solid var(--bd);border-radius:10px;background:#ddd;margin:10px 0}#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:#222;color:#fff;padding:8px 14px;border-radius:20px;display:none;z-index:9;font-size:14px}
+#cropper{position:fixed;inset:0;background:var(--bg);z-index:20;display:none;overflow:auto;padding:14px;padding-top:calc(14px + env(safe-area-inset-top,0px));padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}#cropper.on{display:block}#cropCanvas{display:block;width:100%;height:auto;max-height:none;object-fit:fill;touch-action:none;border:1px solid var(--bd);border-radius:10px;background:#ddd;margin:10px 0;box-sizing:border-box}#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:#222;color:#fff;padding:8px 14px;border-radius:20px;display:none;z-index:9;font-size:14px}
 </style>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
@@ -110,8 +110,9 @@ async function onFoto(inp){
   cv.width=Math.max(1,Math.round(bm.width*scale));cv.height=Math.max(1,Math.round(bm.height*scale));
   const cx=cv.getContext('2d');cx.drawImage(bm,0,0,cv.width,cv.height);
   OCR_SESSION={bm,cv,scale,rect:null,start:null,drag:false};
-  cv.onpointerdown=e=>{const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)*cv.width/r.width,y=(e.clientY-r.top)*cv.height/r.height;OCR_SESSION.start={x,y};OCR_SESSION.rect={x,y,w:0,h:0};OCR_SESSION.drag=true;cv.setPointerCapture(e.pointerId);drawCrop();};
-  cv.onpointermove=e=>{if(!OCR_SESSION||!OCR_SESSION.drag)return;const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)*cv.width/r.width,y=(e.clientY-r.top)*cv.height/r.height;OCR_SESSION.rect={x:Math.min(OCR_SESSION.start.x,x),y:Math.min(OCR_SESSION.start.y,y),w:Math.abs(x-OCR_SESSION.start.x),h:Math.abs(y-OCR_SESSION.start.y)};drawCrop();};
+  const canvasPoint=e=>{const r=cv.getBoundingClientRect();return{x:Math.max(0,Math.min(cv.width,(e.clientX-r.left)*cv.width/r.width)),y:Math.max(0,Math.min(cv.height,(e.clientY-r.top)*cv.height/r.height))};};
+  cv.onpointerdown=e=>{const p=canvasPoint(e);OCR_SESSION.start=p;OCR_SESSION.rect={x:p.x,y:p.y,w:0,h:0};OCR_SESSION.drag=true;cv.setPointerCapture(e.pointerId);drawCrop();};
+  cv.onpointermove=e=>{if(!OCR_SESSION||!OCR_SESSION.drag)return;const p=canvasPoint(e);OCR_SESSION.rect={x:Math.min(OCR_SESSION.start.x,p.x),y:Math.min(OCR_SESSION.start.y,p.y),w:Math.abs(p.x-OCR_SESSION.start.x),h:Math.abs(p.y-OCR_SESSION.start.y)};drawCrop();};
   cv.onpointerup=()=>{if(OCR_SESSION)OCR_SESSION.drag=false;};
   $('#cropper').classList.add('on');st.textContent='Foto preparada localmente. Selecciona la zona del número.';
  }catch(e){console.error(e);st.textContent='No se pudo abrir la foto. Prueba otra imagen o introduce el número manualmente.'}
@@ -121,26 +122,44 @@ function cancelarRecorte(){if(OCR_SESSION?.bm?.close)OCR_SESSION.bm.close();OCR_
 async function procesarFotoCompleta(){const s=OCR_SESSION;if(!s)return;const out=document.createElement('canvas');out.width=s.bm.width;out.height=s.bm.height;out.getContext('2d').drawImage(s.bm,0,0);cancelarRecorte();await leerCanvas(out);out.width=1;out.height=1;out.remove();}
 async function procesarRecorte(){const s=OCR_SESSION;if(!s)return;const r=s.rect;if(!r||r.w<8||r.h<8){$('#cropHelp').textContent='Primero marca un rectángulo alrededor del número.';return;}const out=document.createElement('canvas');out.width=Math.max(1,Math.round(r.w/s.scale));out.height=Math.max(1,Math.round(r.h/s.scale));out.getContext('2d').drawImage(s.bm,r.x/s.scale,r.y/s.scale,r.w/s.scale,r.h/s.scale,0,0,out.width,out.height);cancelarRecorte();await leerCanvas(out);out.width=1;out.height=1;out.remove();}
 async function leerCanvas(source){
- const st=$('#ocrst');let c=null,ctx=null,blob=null;
+ const st=$('#ocrst');let worker=null;const canvases=[];
  try{
-  st.textContent='Preparando el recorte para el reconocimiento local…';if(!window.Tesseract)throw new Error('No se ha cargado el motor OCR. Comprueba la conexión y recarga la página.');
-  const maxSide=2200,scale=Math.min(2.5,maxSide/Math.max(source.width,source.height));c=document.createElement('canvas');c.width=Math.max(1,Math.round(source.width*scale));c.height=Math.max(1,Math.round(source.height*scale));ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(source,0,0,c.width,c.height);
-  const im=ctx.getImageData(0,0,c.width,c.height),px=im.data;for(let i=0;i<px.length;i+=4){const y=.299*px[i]+.587*px[i+1]+.114*px[i+2];let v=(y-128)*1.65+128;v=Math.max(0,Math.min(255,v));px[i]=px[i+1]=px[i+2]=v;}ctx.putImageData(im,0,0);
-  blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la imagen')),'image/png'));
-  st.textContent='Leyendo los números en este dispositivo…';
-  const digits=await Tesseract.recognize(blob,'eng',{tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'7',logger:m=>{if(m.status==='recognizing text'&&m.progress)st.textContent='Leyendo el recorte… '+Math.round(m.progress*100)+' %';}});
-  const digitText=(digits.data&&digits.data.text)||'';
-  const full=await Tesseract.recognize(blob,'spa+eng',{logger:m=>{if(m.status==='recognizing text'&&m.progress)st.textContent='Comprobando texto… '+Math.round(m.progress*100)+' %';}});
-  const fullText=(full.data&&full.data.text)||'';const candidates=new Set();
-  for(const text of [digitText,fullText]){const re=/(?<!\d)(?:\d[\s.\-]?){4}\d(?!\d)/g;let m;while((m=re.exec(text))!==null){const n=m[0].replace(/\D/g,'');if(/^\d{5}$/.test(n))candidates.add(n);}}
+  st.textContent='Preparando varias versiones del recorte para mejorar la lectura…';
+  if(!window.Tesseract||!Tesseract.createWorker)throw new Error('No se ha cargado el motor OCR. Comprueba la conexión y recarga la página.');
+  // Amplía también recortes pequeños: los cinco dígitos suelen ocupar poca altura en la foto.
+  const scale=Math.min(5,2600/Math.max(source.width,source.height));
+  const base=document.createElement('canvas');base.width=Math.max(1,Math.round(source.width*scale));base.height=Math.max(1,Math.round(source.height*scale));
+  const bctx=base.getContext('2d',{willReadFrequently:true});bctx.imageSmoothingEnabled=true;bctx.imageSmoothingQuality='high';bctx.drawImage(source,0,0,base.width,base.height);
+  const image=bctx.getImageData(0,0,base.width,base.height),px=image.data;
+  let sum=0;for(let i=0;i<px.length;i+=4){sum+=.299*px[i]+.587*px[i+1]+.114*px[i+2];}
+  const avg=sum/Math.max(1,px.length/4),threshold=Math.max(90,Math.min(190,avg-12));
+  const gray=document.createElement('canvas');gray.width=base.width;gray.height=base.height;const g=gray.getContext('2d',{willReadFrequently:true});
+  for(let i=0;i<px.length;i+=4){const y=.299*px[i]+.587*px[i+1]+.114*px[i+2];let v=Math.max(0,Math.min(255,(y-128)*1.9+128));px[i]=px[i+1]=px[i+2]=v;}
+  g.putImageData(image,0,0);canvases.push(base,gray);
+  const bin=document.createElement('canvas');bin.width=base.width;bin.height=base.height;const bc=bin.getContext('2d',{willReadFrequently:true});bc.drawImage(gray,0,0);const bi=bc.getImageData(0,0,bin.width,bin.height),bp=bi.data;
+  for(let i=0;i<bp.length;i+=4){const v=bp[i]>threshold?255:0;bp[i]=bp[i+1]=bp[i+2]=v;}
+  bc.putImageData(bi,0,0);canvases.push(bin);
+  st.textContent='Cargando el lector de números en este dispositivo…';
+  worker=await Tesseract.createWorker('eng',1,{logger:m=>{if(m.status==='recognizing text'&&m.progress)st.textContent='Reconociendo cifras… '+Math.round(m.progress*100)+' %';}});
+  await worker.setParameters({tessedit_char_whitelist:'0123456789',preserve_interword_spaces:'0'});
+  const candidates=new Set(),readings=[];
+  // Prueba las tres preparaciones y dos modos de segmentación, sin enviar la foto fuera del navegador.
+  for(let i=0;i<canvases.length;i++){
+   for(const psm of ['7','8']){
+    await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:psm,preserve_interword_spaces:'0'});
+    st.textContent='Probando lectura '+(readings.length+1)+' de 6…';
+    const result=await worker.recognize(canvases[i]);const raw=(result.data&&result.data.text)||'';readings.push(raw);
+    const direct=raw.match(/\d{5}/g)||[];direct.forEach(n=>candidates.add(n));
+    const compact=raw.replace(/\D/g,'');if(/^\d{5}$/.test(compact))candidates.add(compact);
+   }
+   if(candidates.size===1)break;
+  }
   const nums=[...candidates];
-  if(nums.length===1){F.num=nums[0];$('#fnum').value=F.num;F.okDup=false;updDup();st.textContent='El OCR propone '+F.num+'. Comprueba que coincide con el número impreso antes de guardar.';}
-  else if(nums.length>1){st.textContent='El recorte contiene varias lecturas posibles: '+nums.join(', ')+'. Ajusta el recorte para incluir solo las cinco cifras o escríbelas manualmente.';}
-  else{st.textContent='No se ha podido leer el número en ese recorte. Prueba a marcar más cerca de las cifras o introdúcelo manualmente.';}
-  const combined=fullText+'\n'+digitText;const serie=combined.match(/(?:serie|ser\.?)[^\d]{0,12}(\d{1,5})/i),frac=combined.match(/(?:fracci[oó]n|frac\.?)[^\d]{0,12}(\d{1,3})/i);
-  if(serie){F.serie=serie[1];const el=document.querySelector('[placeholder=Serie]');if(el)el.value=F.serie;}if(frac){F.fr=frac[1];const el=document.querySelector('[placeholder="Fracción"]');if(el)el.value=F.fr;}
- }catch(e){console.error('Error OCR local:',e);st.textContent='No se pudo ejecutar el OCR. Comprueba la conexión para cargar el motor y el idioma. La fotografía no se envía al servicio de OCR; puedes introducir el número manualmente.'}
- finally{if(c){c.width=1;c.height=1;c.remove()}blob=null;ctx=null;}
+  if(nums.length===1){F.num=nums[0];$('#fnum').value=F.num;F.okDup=false;updDup();st.textContent='El OCR propone '+F.num+'. Comprueba que coincide exactamente con el número impreso antes de guardar.';}
+  else if(nums.length>1){st.textContent='El OCR ha encontrado lecturas distintas ('+nums.join(', ')+'). No se ha elegido ninguna: recorta solo las cinco cifras o introdúcelas manualmente.';}
+  else{st.textContent='No se han detectado cinco cifras con suficiente claridad. Prueba una foto más nítida, con el número recto y bien iluminado, o introdúcelo manualmente.';}
+ }catch(e){console.error('Error OCR local:',e);st.textContent='No se pudo ejecutar el OCR local: '+(e&&e.message?e.message:'error desconocido')+'. Comprueba la conexión y vuelve a intentarlo; también puedes introducir el número manualmente.';}
+ finally{if(worker){try{await worker.terminate()}catch(e){console.warn(e)}}for(const c of canvases){c.width=1;c.height=1;c.remove();}}
 }
 async function ocr(blob){/* La lectura se realiza directamente en onFoto con Tesseract local. */}
 /* ---------- Resumen ---------- */
