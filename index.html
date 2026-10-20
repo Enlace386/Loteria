@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mi Lotería de Navidad</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--tx:#1d1d1f;--mut:#6b6b70;--ac:#c8102e;--ok:#18794e;--wa:#b45309;--er:#c0152f;--bd:#e4e0d8;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141414;--card:#1f1f21;--tx:#f2f2f2;--mut:#9a9aa0;--ac:#ff4d63;--ok:#4cc38a;--wa:#f5a623;--er:#ff6b7d;--bd:#333}}
+:root[data-theme="dark"]{--bg:#141414;--card:#1f1f21;--tx:#f2f2f2;--mut:#9a9aa0;--ac:#ff4d63;--ok:#4cc38a;--wa:#f5a623;--er:#ff6b7d;--bd:#333}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.4 -apple-system,system-ui,"Segoe UI",sans-serif}
+#app{display:flex;flex-direction:column;height:100%;max-width:640px;margin:auto}
+#main{flex:1;overflow-y:auto;padding:12px 14px}
+nav{display:flex;border-top:1px solid var(--bd);background:var(--card)}
+nav button{flex:1;padding:10px 4px;background:none;border:0;color:var(--mut);font-size:13px}
+nav button.on{color:var(--ac);font-weight:700}
+h1{font-size:22px;margin:4px 0 10px;display:flex;justify-content:space-between;align-items:center}
+.mut{color:var(--mut);font-size:13px}.ok{color:var(--ok)}.wa{color:var(--wa)}.er{color:var(--er)}
+.card{display:flex;gap:10px;background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px;margin-bottom:10px;align-items:flex-start}
+.card img{width:56px;height:56px;object-fit:cover;border-radius:8px}.cb{flex:1;min-width:0}
+.num{font:700 24px ui-monospace,Menlo,monospace;letter-spacing:2px}.tot{font-weight:700}
+.chip{display:inline-block;background:var(--bg);border:1px solid var(--bd);border-radius:20px;padding:1px 8px;margin:3px 4px 0 0;font-size:12px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--bd);border-radius:10px;background:var(--card);color:var(--tx);font-size:16px;margin:4px 0}
+.btn,button.b{display:inline-block;background:var(--ac);color:#fff;border:0;border-radius:10px;padding:10px 14px;font-size:15px;font-weight:600;margin:4px 4px 4px 0}
+.btn.s,button.s{background:var(--card);color:var(--tx);border:1px solid var(--bd)}
+.ban{padding:10px;border-radius:10px;margin-bottom:10px;font-weight:600}.okb{background:#18794e22;color:var(--ok)}.nob{background:#c0152f22;color:var(--er)}
+#form{position:fixed;inset:0;background:var(--bg);overflow-y:auto;padding:calc(12px + env(safe-area-inset-top,0px)) 14px calc(24px + env(safe-area-inset-bottom,0px));display:none;z-index:5}
+#form.on{display:block}.r2{display:flex;gap:8px;align-items:center}.r2 select{width:70px}
+.prow{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px;margin:6px 0}
+.x{background:none;border:0;color:var(--er);font-size:20px}
+#prev img{max-width:100%;max-height:200px;border-radius:10px}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;border-bottom:1px solid var(--bd);text-align:right}td:first-child,th:first-child{text-align:left}
+.kpi{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}.kpi div{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:10px}.kpi b{display:block;font-size:20px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(80px + env(safe-area-inset-bottom,0px));background:#222;color:#fff;padding:8px 14px;border-radius:20px;display:none;z-index:9;font-size:14px}
+</style></head><body>
+<div id="app"><div id="main"></div>
+<nav><button id="n-list" onclick="go('list')">🎟️ Décimos</button><button id="n-res" onclick="go('res')">📊 Resumen</button><button id="n-prem" onclick="go('prem')">🏆 Premios</button></nav></div>
+<div id="form"></div><div id="toast"></div>
+<script>
+const K='loteria2026',PRECIO=20,EXEN=40000,RET=.2;
+let S={decimos:[]},tab='list',q='',F=null;
+try{S=JSON.parse(localStorage.getItem(K))||S}catch(e){}
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const eur=n=>(+n||0).toLocaleString('es-ES',{style:'currency',currency:'EUR'}),pad=n=>String(n||'').replace(/\D/g,'').slice(0,5);
+const pf=v=>{const n=parseFloat(String(v).replace(',','.'));return isNaN(n)?0:n},r2=n=>Math.round(n*100)/100,uid=()=>Math.random().toString(36).slice(2,9);
+const save=()=>{try{localStorage.setItem(K,JSON.stringify(S))}catch(e){toast('No se pudo guardar: foto demasiado grande')}};
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.display='none',2800)}
+const asig=d=>d.parts.reduce((a,p)=>a+p.imp,0),bruto=d=>d.premio==null?0:d.premio*d.total/PRECIO,
+ret=d=>d.premio==null?0:Math.max(0,d.premio-EXEN)*RET*d.total/PRECIO,neto=d=>bruto(d)-ret(d),netoP=(d,p)=>d.total>0?neto(d)*p.imp/d.total:0;
+const isYo=n=>n.trim().toLowerCase()==='yo';
+function go(t){tab=t;render()}
+function render(){['list','res','prem'].forEach(t=>$('#n-'+t).classList.toggle('on',t==tab));
+$('#main').innerHTML={list:vList,res:vRes,prem:vPrem}[tab]();if(tab=='list')renderLista()}
+/* ---------- Lista y buscador ---------- */
+function vList(){return `<h1>Mis décimos <button class=b onclick="abrir()">＋ Nuevo</button></h1><input id=bq type=search placeholder="Buscar número, nombre u origen…" value="${esc(q)}" oninput="q=this.value;renderLista()"><div id=lista></div>`}
+function card(d){const a=asig(d);return `<div class=card onclick="abrir('${d.id}')">${d.foto?`<img src="${d.foto}">`:''}<div class=cb><div class=num>${d.num}</div><div class=mut>${[d.serie&&'Serie '+d.serie,d.fr&&'Fracción '+d.fr,d.origen&&esc(d.origen)].filter(Boolean).join(' · ')}</div><div>${d.parts.map(p=>`<span class=chip>${esc(p.n)} ${eur(p.imp)}</span>`).join('')}</div>${Math.abs(d.total-a)>.005?`<div class=wa>Sin asignar: ${eur(d.total-a)}</div>`:''}${d.premio!=null?`<div class=ok>Premio bruto: ${eur(bruto(d))}</div>`:''}</div><div class=tot>${eur(d.total)}</div></div>`}
+function renderLista(){const t=q.trim().toLowerCase();
+const L=S.decimos.filter(d=>!t||d.num.includes(t)||d.origen.toLowerCase().includes(t)||d.parts.some(p=>p.n.toLowerCase().includes(t)));
+let ban='';if(/^\d{5}$/.test(t))ban=L.length?`<div class="ban okb">✅ Sí juegas el ${t}</div>`:`<div class="ban nob">❌ No tienes el ${t}</div>`;
+$('#lista').innerHTML=ban+(L.length?L.map(card).join(''):`<p class=mut style="text-align:center;margin-top:30px">${S.decimos.length?'Sin resultados.':'Aún no hay décimos. Pulsa ＋ Nuevo.'}</p>`)}
+/* ---------- Formulario ---------- */
+const imp=p=>p.mode=='€'?p.v:F.total*p.v/100;
+function abrir(id){const d=S.decimos.find(x=>x.id==id);
+F=d?{id:d.id,num:d.num,serie:d.serie||'',fr:d.fr||'',total:d.total,origen:d.origen,notas:d.notas||'',foto:d.foto||'',premio:d.premio,cobrado:d.cobrado,parts:d.parts.map(p=>({n:p.n,mode:'€',v:p.imp}))}
+:{id:null,num:'',serie:'',fr:'',total:20,origen:'',notas:'',foto:'',premio:null,cobrado:false,parts:[{n:'Yo',mode:'€',v:20}]};
+const names=[...new Set(['Yo',...S.decimos.flatMap(d=>d.parts.map(p=>p.n))])];
+$('#form').innerHTML=`<h1>${d?'Editar':'Nuevo'} décimo <button class="b s" onclick="cerrar()">Cerrar</button></h1>
+<label class=btn>📷 Hacer foto<input type=file accept="image/*" capture=environment hidden onchange="onFoto(this)"></label><label class="btn s">🖼️ Galería<input type=file accept="image/*" hidden onchange="onFoto(this)"></label>
+<div id=prev>${F.foto?`<img src="${F.foto}">`:''}</div><div class=mut id=ocrst>La foto se guarda con la ficha y se intenta leer el número automáticamente.</div>
+<input id=fnum inputmode=numeric maxlength=5 placeholder="Número (5 dígitos)" value="${F.num}" style="font:700 28px ui-monospace,monospace;text-align:center;letter-spacing:4px" oninput="F.num=pad(this.value);this.value=F.num;F.okDup=false;updDup()"><div id=dup></div>
+<div class=r2><input placeholder=Serie inputmode=numeric value="${F.serie}" oninput="F.serie=this.value"><input placeholder=Fracción inputmode=numeric value="${F.fr}" oninput="F.fr=this.value"></div>
+<div class=r2><span>Importe total €</span><input inputmode=decimal value="${F.total}" oninput="F.total=pf(this.value);updResumen()"></div>
+<input placeholder="Administración u origen (ej. Doña Manolita, Madrid)" value="${esc(F.origen)}" oninput="F.origen=this.value"><textarea placeholder=Notas rows=2 oninput="F.notas=this.value">${esc(F.notas)}</textarea>
+<h3>Participantes</h3><datalist id=nombres>${names.map(n=>`<option value="${esc(n)}">`).join('')}</datalist><div id=parts></div>
+<button class="b s" onclick="F.parts.push({n:'',mode:'€',v:0});drawParts()">＋ Añadir</button><button class="b s" onclick="repartir()">Repartir a partes iguales</button><div id=resu style="margin:8px 0"></div>
+<button class=b onclick="guardar()">Guardar</button>${d?'<button class="b s" style="color:var(--er)" onclick="borrar()">Eliminar</button>':''}`;
+$('#form').classList.add('on');$('#form').scrollTop=0;drawParts();updDup()}
+function cerrar(){$('#form').classList.remove('on');F=null;render()}
+function updDup(){const e=$('#dup');if(F.num.length<5){e.innerHTML='';return}
+const o=S.decimos.filter(d=>d.num==F.num&&d.id!=F.id);
+e.innerHTML=o.length?`<div class="ban nob">⚠️ ¡Ya tienes el ${F.num}! ${o.map(d=>[d.serie&&'Serie '+d.serie,d.fr&&'Fr. '+d.fr,d.origen,'con '+(d.parts.map(p=>p.n).join(', ')||'nadie')].filter(Boolean).join(' · ')).join(' | ')}</div>`:`<div class="ban okb">✅ No lo tienes registrado</div>`}
+function drawParts(){$('#parts').innerHTML=F.parts.map((p,i)=>`<div class=prow><div class=r2><input list=nombres placeholder=Nombre value="${esc(p.n)}" oninput="F.parts[${i}].n=this.value"><button class=x onclick="F.parts.splice(${i},1);drawParts()">✕</button></div><div class=r2><select onchange="modo(${i},this.value)"><option ${p.mode=='€'?'selected':''}>€</option><option ${p.mode=='%'?'selected':''}>%</option></select><input inputmode=decimal value="${p.v||''}" oninput="F.parts[${i}].v=pf(this.value);updResumen()"></div><div class=mut id=eq${i}></div></div>`).join('');updResumen()}
+function updResumen(){F.parts.forEach((p,i)=>{const e=$('#eq'+i);if(e)e.textContent=p.mode=='€'?(F.total>0?'= '+(imp(p)/F.total*100).toFixed(2)+' % del décimo':''):'= '+eur(imp(p))});
+const a=F.parts.reduce((s,p)=>s+imp(p),0),r=F.total-a;$('#resu').innerHTML=`Asignado ${eur(a)} · <b class="${r<-.005?'er':Math.abs(r)<.005?'ok':'wa'}">Sin asignar ${eur(r)}</b>`}
+function modo(i,m){const p=F.parts[i],x=imp(p);p.mode=m;p.v=m=='€'?r2(x):(F.total>0?r2(x/F.total*100):0);drawParts()}
+function repartir(){const n=F.parts.length;if(!n)return;const pt=Math.floor(F.total/n*100)/100;F.parts.forEach(p=>{p.mode='€';p.v=pt});F.parts[n-1].v=r2(F.total-pt*(n-1));drawParts()}
+function guardar(){if(F.num.length!=5)return toast('El número debe tener 5 dígitos');if(!(F.total>0))return toast('Indica el importe total');
+const parts=F.parts.map(p=>({n:p.n.trim(),imp:r2(imp(p))})).filter(p=>p.n&&p.imp>0);
+if(parts.reduce((a,p)=>a+p.imp,0)>F.total+.005)return toast('Has asignado más del importe total');
+if(S.decimos.some(d=>d.num==F.num&&d.id!=F.id)&&!F.okDup){F.okDup=true;return toast('Ya existe. Pulsa Guardar otra vez para añadirlo igualmente')}
+const rec={id:F.id||uid(),num:F.num,serie:F.serie,fr:F.fr,total:F.total,origen:F.origen.trim(),notas:F.notas,foto:F.foto,premio:F.premio,cobrado:F.cobrado,parts};
+const i=S.decimos.findIndex(d=>d.id==rec.id);i>=0?S.decimos[i]=rec:S.decimos.unshift(rec);save();cerrar();toast('Guardado')}
+function borrar(){if(!F.confirmaBorrar){F.confirmaBorrar=true;return toast('Pulsa Eliminar otra vez para confirmar')}S.decimos=S.decimos.filter(d=>d.id!=F.id);save();cerrar()}
+/* ---------- Foto + lectura automática ---------- */
+async function onFoto(inp){const f=inp.files[0];if(!f)return;inp.value='';
+try{const bm=await createImageBitmap(f),k=Math.min(1,1000/Math.max(bm.width,bm.height)),c=document.createElement('canvas');c.width=bm.width*k;c.height=bm.height*k;c.getContext('2d').drawImage(bm,0,0,c.width,c.height);
+const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.7));F.foto=c.toDataURL('image/jpeg',.7);$('#prev').innerHTML=`<img src="${F.foto}">`;await ocr(blob)}catch(e){toast('No se pudo procesar la imagen')}}
+async function ocr(blob){const st=$('#ocrst');
+try{const s=window.claude&&await claude.use('sample'),lim=s&&await s.limits();
+if(!s||!lim.images){st.textContent='Lectura automática no disponible: escribe el número a mano.';return}
+st.textContent='Leyendo décimo…';
+const r=await s.json('Foto de un décimo de Lotería de Navidad de España. Devuelve SOLO JSON: {"numero":"5 dígitos o null","serie":número o null,"fraccion":número o null}. El número grande de 5 dígitos es el del décimo.',{images:[blob],modelTier:'quick',cache:false});
+if(r&&r.numero){F.num=pad(r.numero);$('#fnum').value=F.num;updDup()}
+if(r&&r.serie){F.serie=String(r.serie);document.querySelector('[placeholder=Serie]').value=F.serie}
+if(r&&r.fraccion){F.fr=String(r.fraccion);document.querySelector('[placeholder="Fracción"]').value=F.fr}
+st.textContent=r&&r.numero?'Detectado automáticamente: revisa que sea correcto.':'No se pudo leer el número: escríbelo a mano.'}
+catch(e){st.textContent='No se pudo leer automáticamente: escribe el número.'}}
+/* ---------- Resumen ---------- */
+function vRes(){const D=S.decimos,inv=D.reduce((a,d)=>a+d.total,0),map={};
+D.forEach(d=>d.parts.forEach(p=>{const k=p.n.toLowerCase();(map[k]=map[k]||{n:p.n,j:0,g:0});map[k].j+=p.imp;map[k].g+=netoP(d,p)}));
+const yo=map['yo']||{j:0,g:0},sin=D.reduce((a,d)=>a+Math.max(0,d.total-asig(d)),0),gan=D.reduce((a,d)=>a+neto(d),0);
+return `<h1>Resumen</h1><div class=kpi><div>Total invertido<b>${eur(inv)}</b></div><div>Jugado por mí<b>${eur(yo.j)}</b></div><div>Ganado (neto)<b class=ok>${eur(gan)}</b></div><div>Mi parte ganada<b class=ok>${eur(yo.g)}</b></div></div>
+${sin>.005?`<p class=wa>Hay ${eur(sin)} sin asignar a ningún participante.</p>`:''}
+<table><tr><th>Participante</th><th>Juega</th><th>Gana</th></tr>${Object.values(map).sort((a,b)=>b.j-a.j).map(x=>`<tr><td>${esc(x.n)}</td><td>${eur(x.j)}</td><td>${eur(x.g)}</td></tr>`).join('')||'<tr><td colspan=3 class=mut>Sin datos todavía</td></tr>'}</table>
+<h3>Compartir</h3><button class=b onclick="compartir()">Compartir resumen (WhatsApp / email)</button><button class="b s" onclick="csv()">Descargar CSV (Excel)</button>
+<p class=mut>Nota: “Yo” es el nombre que se usa para tu parte. Los datos se guardan solo en este navegador.</p>`}
+function filas(){const o=[['Número','Serie','Fracción','Origen','Participante','Importe €','Porcentaje %','Premio neto €']];
+S.decimos.forEach(d=>d.parts.forEach(p=>o.push([d.num,d.serie,d.fr,d.origen,p.n,p.imp.toFixed(2),(p.imp/d.total*100).toFixed(2),netoP(d,p).toFixed(2)])));return o}
+async function csv(){const t='\ufeff'+filas().map(r=>r.map(c=>'"'+String(c??'').replace(/"/g,'""')+'"').join(';')).join('\r\n');
+try{const dl=await claude.use('downloads');if(!dl)return toast('Descarga no disponible aquí');await dl.save({filename:'loteria-navidad.csv',data:t});}catch(e){if(e&&e.code!='declined')toast('No se pudo descargar')}}
+async function compartir(){const by={};S.decimos.forEach(d=>d.parts.forEach(p=>(by[p.n]=by[p.n]||[]).push(`${d.num}${d.serie?' (S'+d.serie+(d.fr?' F'+d.fr:'')+')':''}${d.origen?' – '+d.origen:''}: ${eur(p.imp)} (${(p.imp/d.total*100).toFixed(1)} %)${d.premio!=null?' → premio '+eur(netoP(d,p)):''}`)));
+const t='🎄 Lotería de Navidad\n'+Object.entries(by).map(([n,l])=>`\n${n}\n`+l.map(x=>'• '+x).join('\n')).join('\n');
+try{if(navigator.share){await navigator.share({text:t});return}}catch(e){if(e.name=='AbortError')return}
+try{await navigator.clipboard.writeText(t);toast('Resumen copiado: pégalo en WhatsApp o email')}catch(e){toast('No se pudo compartir')}}
+/* ---------- Premios ---------- */
+function vPrem(){return `<h1>Premios</h1><p class=mut>El día 22 de diciembre escribe el premio que toca a cada número (por décimo de 20 €). Esta versión no puede consultar la API oficial; el reparto y la retención del 20 % sobre el exceso de 40.000 € se calculan solos.</p>
+${S.decimos.map(d=>`<div class=card style="display:block"><div class=r2><span class=num style="font-size:20px">${d.num}</span><input inputmode=decimal placeholder="Premio por décimo €" value="${d.premio??''}" oninput="setPremio('${d.id}',this.value)"></div><div id="pr-${d.id}" class=mut>${repo(d)}</div>
+<label class=mut><input type=checkbox style="width:auto" ${d.cobrado?'checked':''} onchange="cobrado('${d.id}',this.checked)"> Premio cobrado</label></div>`).join('')||'<p class=mut>Añade décimos primero.</p>'}
+<h3>Recordatorios</h3><button class=b onclick="ics()">Añadir al calendario (sorteo y cobro)</button>`}
+const repo=d=>d.premio==null?'Sin comprobar':`Neto ${eur(neto(d))} → `+d.parts.map(p=>`${esc(p.n)}: ${eur(netoP(d,p))}`).join(' · ');
+function setPremio(id,v){const d=S.decimos.find(x=>x.id==id);d.premio=v.trim()===''?null:pf(v);save();$('#pr-'+id).innerHTML=repo(d)}
+function cobrado(id,c){S.decimos.find(x=>x.id==id).cobrado=c;save()}
+async function ics(){const ev=(u,d,s,h)=>`BEGIN:VEVENT\r\nUID:${u}@loteria\r\nDTSTAMP:20261001T000000Z\r\nDTSTART;VALUE=DATE:${d}\r\nSUMMARY:${s}\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:${s}\r\nTRIGGER;RELATED=START:PT${h}H\r\nEND:VALARM\r\nEND:VEVENT\r\n`;
+const t='BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Loteria//ES\r\n'+ev('sorteo','20261222','Sorteo de Navidad: comprobar números',9)+ev('cobro','20270315','Cobrar premios de Navidad (plazo hasta ~22 marzo)',9)+'END:VCALENDAR';
+try{const dl=await claude.use('downloads');if(!dl)return toast('Descarga no disponible aquí');await dl.save({filename:'loteria-recordatorios.ics',data:t})}catch(e){if(e&&e.code!='declined')toast('No se pudo descargar')}}
+render();
+</script></body></html>
