@@ -98,9 +98,47 @@ if(S.decimos.some(d=>d.num==F.num&&d.id!=F.id)&&!F.okDup){F.okDup=true;return to
 const rec={id:F.id||uid(),num:F.num,serie:F.serie,fr:F.fr,total:F.total,origen:F.origen.trim(),notas:F.notas,premio:F.premio,cobrado:F.cobrado,parts};
 const i=S.decimos.findIndex(d=>d.id==rec.id);i>=0?S.decimos[i]=rec:S.decimos.unshift(rec);if(await save()){cerrar();toast('Guardado en Firebase')}}
 function borrar(){if(!F.confirmaBorrar){F.confirmaBorrar=true;return toast('Pulsa Eliminar otra vez para confirmar')}S.decimos=S.decimos.filter(d=>d.id!=F.id);save();cerrar()}
-/* ---------- Foto + lectura automática ---------- */
-async function onFoto(inp){const f=inp.files&&inp.files[0];if(!f)return;inp.value='';const st=$('#ocrst');let bm=null,c=null,blob=null;try{st.textContent='Procesando la imagen localmente…';bm=await createImageBitmap(f);const k=Math.min(1,1600/Math.max(bm.width,bm.height));c=document.createElement('canvas');c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la imagen')),'image/jpeg',.85));if(!window.Tesseract)throw new Error('OCR no disponible');const result=await Tesseract.recognize(blob,'eng');const txt=result.data.text||'';const nums=txt.match(/\b\d{5}\b/g)||[];const unique=[...new Set(nums)];if(unique.length===1){F.num=unique[0];$('#fnum').value=F.num;updDup();st.textContent='Número detectado: '+F.num+'. Compruébalo antes de guardar.'}else if(unique.length>1){st.textContent='Se han leído varios números ('+unique.join(', ')+'). Escribe manualmente el número correcto.'}else{st.textContent='No se pudo leer el número. Escríbelo manualmente.'}const serie=txt.match(/(?:serie|ser\.?)[^\d]{0,8}(\d{1,5})/i),frac=txt.match(/(?:fracci[oó]n|frac\.?)[^\d]{0,8}(\d{1,3})/i);if(serie){F.serie=serie[1];document.querySelector('[placeholder=Serie]').value=F.serie}if(frac){F.fr=frac[1];document.querySelector('[placeholder="Fracción"]').value=F.fr}}catch(e){console.error(e);st.textContent='No se pudo leer automáticamente. Escribe el número manualmente.'}finally{if(bm&&bm.close)bm.close();if(c){c.width=1;c.height=1;c.remove()}if(blob)blob=null;}}
-async function ocr(blob){/* Compatibilidad: la lectura se realiza directamente en onFoto con Tesseract local. */}
+/* ---------- Foto + lectura automática (OCR local mejorado) ---------- */
+async function onFoto(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;inp.value='';
+  const st=$('#ocrst');let bm=null,c=null,ctx=null,blob=null,enhanced=null;
+  try{
+    st.textContent='Preparando la foto para leerla en este dispositivo…';
+    if(!window.Tesseract)throw new Error('No se ha cargado el motor OCR. Comprueba la conexión y recarga la página.');
+    bm=await createImageBitmap(f);
+    const maxSide=2200,scale=Math.min(2.2,maxSide/Math.max(bm.width,bm.height));
+    c=document.createElement('canvas');c.width=Math.max(1,Math.round(bm.width*scale));c.height=Math.max(1,Math.round(bm.height*scale));
+    ctx=c.getContext('2d',{willReadFrequently:true});ctx.drawImage(bm,0,0,c.width,c.height);
+    // Aumentar contraste y convertir a escala de grises para mejorar los dígitos impresos.
+    const im=ctx.getImageData(0,0,c.width,c.height),px=im.data;
+    for(let i=0;i<px.length;i+=4){const y=.299*px[i]+.587*px[i+1]+.114*px[i+2];let v=(y-128)*1.55+128;v=Math.max(0,Math.min(255,v));px[i]=px[i+1]=px[i+2]=v;}
+    ctx.putImageData(im,0,0);
+    blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('No se pudo preparar la imagen')),'image/png'));
+    st.textContent='Leyendo texto y números (puede tardar unos segundos)…';
+    // El archivo de imagen se procesa en el navegador. spa+eng reconoce mejor las etiquetas españolas.
+    const full=await Tesseract.recognize(blob,'spa+eng',{logger:m=>{if(m.status==='recognizing text'&&m.progress)st.textContent='Leyendo texto… '+Math.round(m.progress*100)+' %';}});
+    const fullText=(full.data&&full.data.text)||'';
+    // Segunda pasada centrada en números para boletos con tipografía decorativa o poco contraste.
+    const digits=await Tesseract.recognize(blob,'eng',{tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'11',logger:m=>{if(m.status==='recognizing text'&&m.progress)st.textContent='Revisando los dígitos… '+Math.round(m.progress*100)+' %';}});
+    const digitText=(digits.data&&digits.data.text)||'';
+    const candidates=new Set();
+    for(const text of [fullText,digitText]){
+      // Tolera que Tesseract separe los cinco dígitos con espacios, puntos o guiones.
+      const re=/(?<!\d)(?:\d[\s.\-]?){4}\d(?!\d)/g;let m;
+      while((m=re.exec(text))!==null){const n=m[0].replace(/\D/g,'');if(/^\d{5}$/.test(n))candidates.add(n);}
+    }
+    const nums=[...candidates];
+    if(nums.length===1){F.num=nums[0];$('#fnum').value=F.num;updDup();st.textContent='Número detectado: '+F.num+'. Compruébalo visualmente antes de guardar.'}
+    else if(nums.length>1){st.textContent='Se han encontrado varios números posibles: '+nums.join(', ')+'. Para evitar errores, escribe o confirma manualmente el número correcto.'}
+    else{st.textContent='No se ha identificado con suficiente seguridad un número de 5 cifras. Escríbelo manualmente; puedes volver a fotografiar el décimo con más luz y encuadrando el número.'}
+    const combined=fullText+'\n'+digitText;
+    const serie=combined.match(/(?:serie|ser\.?)[^\d]{0,12}(\d{1,5})/i),frac=combined.match(/(?:fracci[oó]n|frac\.?)[^\d]{0,12}(\d{1,3})/i);
+    if(serie){F.serie=serie[1];const el=document.querySelector('[placeholder=Serie]');if(el)el.value=F.serie;}
+    if(frac){F.fr=frac[1];const el=document.querySelector('[placeholder="Fracción"]');if(el)el.value=F.fr;}
+  }catch(e){console.error('Error OCR local:',e);st.textContent='No se pudo ejecutar el OCR. Comprueba la conexión para cargar el motor y el idioma; la foto no se envía al servicio de OCR. Puedes introducir los datos manualmente.'}
+  finally{if(bm&&bm.close)bm.close();if(c){c.width=1;c.height=1;c.remove()}blob=null;enhanced=null;ctx=null;}
+}
+async function ocr(blob){/* La lectura se realiza directamente en onFoto con Tesseract local. */}
 /* ---------- Resumen ---------- */
 function vRes(){const D=S.decimos,inv=D.reduce((a,d)=>a+d.total,0),map={};
 D.forEach(d=>d.parts.forEach(p=>{const k=p.n.toLowerCase();(map[k]=map[k]||{n:p.n,j:0,g:0});map[k].j+=p.imp;map[k].g+=netoP(d,p)}));
